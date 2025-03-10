@@ -1,8 +1,9 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import os
 
 app = Flask(__name__)
-CORS(app)  # This line lets your front end connect
+CORS(app)  # Allows your front end to connect
 
 @app.route('/')
 def home():
@@ -25,4 +26,5 @@ def calculate():
     return jsonify(response)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 10000))  # Use Render's port or default to 10000
+    app.run(host='0.0.0.0', port=port, debug=True)
