@@ -98,7 +98,7 @@ def generate_pdf():
     elements = []
 
     # Logo
-    logo_url = "https://your-username.github.io/comexai-mvp/comexai_logo.png"  # Replace with your actual URL
+    logo_url = "https://gmoreira-p.github.io/comexai-mvp/comexai_logo.png"  # Replace with your actual URL
     try:
         response = requests.get(logo_url, timeout=5)
         if response.status_code == 200:
