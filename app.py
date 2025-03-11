@@ -75,6 +75,7 @@ def calculate():
 @app.route('/generate_pdf', methods=['POST'])
 def generate_pdf():
     data = request.json
+    print("Received data for PDF:", data)  # Debug log
     ncm = data.get('ncm')
     state = data.get('state')
     if not ncm or ncm not in TAX_RATES:
@@ -87,9 +88,10 @@ def generate_pdf():
         product_cost_per_unit = float(data.get('productCost'))
         freight = float(data.get('freight', 0))
         insurance = float(data.get('insurance', 0))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as e:
+        print("Error parsing numbers:", e)  # Debug log
         return jsonify({"error": "Invalid numeric input"}), 400
-
+    
     rates = TAX_RATES[ncm]
     icms_rate = STATE_ICMS_RATES[state]
 
