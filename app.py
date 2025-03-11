@@ -50,13 +50,15 @@ def calculate():
     if icms_rate is None:
         return jsonify({"error": "Invalid or unsupported state"}), 400
 
+    # Calculate taxes step-by-step
     total_product_cost = quantity * product_cost_per_unit
-    valor_aduaneiro = total_product_cost + freight + insurance
+    valor_aduaneiro = total_product_cost + freight + insurance  # CIF value
     II = valor_aduaneiro * rates['II']
-    IPI = valor_aduaneiro * rates['IPI']
+    IPI = (valor_aduaneiro + II) * rates['IPI']  # Corrected: Include II in IPI base
     PIS = valor_aduaneiro * rates['PIS']
     COFINS = valor_aduaneiro * rates['COFINS']
-    ICMS = (valor_aduaneiro + II + IPI + PIS + COFINS) * icms_rate
+    base_icms = valor_aduaneiro + II + IPI + PIS + COFINS
+    ICMS = (icms_rate * base_icms) / (1 - icms_rate)  # Corrected: Gross-up method
     total_tributos = II + IPI + PIS + COFINS + ICMS
     custo_liquido = valor_aduaneiro + total_tributos
     cost_per_unit = custo_liquido / quantity if quantity > 0 else 0
@@ -100,16 +102,17 @@ def generate_pdf():
         return jsonify({"error": "Invalid or unsupported state"}), 400
 
     total_product_cost = quantity * product_cost_per_unit
-    valor_aduaneiro = total_product_cost + freight + insurance
+    valor_aduaneiro = total_product_cost + freight + insurance  # CIF value
     II = valor_aduaneiro * rates['II']
-    IPI = valor_aduaneiro * rates['IPI']
+    IPI = (valor_aduaneiro + II) * rates['IPI']  # Corrected: Include II in IPI base
     PIS = valor_aduaneiro * rates['PIS']
     COFINS = valor_aduaneiro * rates['COFINS']
-    ICMS = (valor_aduaneiro + II + IPI + PIS + COFINS) * icms_rate
+    base_icms = valor_aduaneiro + II + IPI + PIS + COFINS
+    ICMS = (icms_rate * base_icms) / (1 - icms_rate)  # Corrected: Gross-up method
     total_tributos = II + IPI + PIS + COFINS + ICMS
     custo_liquido = valor_aduaneiro + total_tributos
     cost_per_unit = custo_liquido / quantity if quantity > 0 else 0
-
+    
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
