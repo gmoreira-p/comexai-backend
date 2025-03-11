@@ -48,6 +48,7 @@ def calculate():
     COFINS = customs_value * rates['COFINS']
     ICMS = (customs_value + II + IPI + PIS + COFINS) * rates['ICMS']
     total_import_cost = total_product_cost + freight + insurance + II + IPI + ICMS + PIS + COFINS
+    cost_per_unit = total_import_cost / quantity if quantity > 0 else 0
 
     response = {
         "total_product_cost": total_product_cost,
@@ -58,7 +59,8 @@ def calculate():
         "ICMS": ICMS,
         "PIS": PIS,
         "COFINS": COFINS,
-        "total_import_cost": total_import_cost
+        "total_import_cost": total_import_cost,
+        "cost_per_unit": cost_per_unit
     }
     return jsonify(response)
 
@@ -86,6 +88,7 @@ def generate_pdf():
     COFINS = customs_value * rates['COFINS']
     ICMS = (customs_value + II + IPI + PIS + COFINS) * rates['ICMS']
     total_import_cost = total_product_cost + freight + insurance + II + IPI + ICMS + PIS + COFINS
+    cost_per_unit = total_import_cost / quantity if quantity > 0 else 0
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
@@ -127,6 +130,7 @@ def generate_pdf():
         ["ICMS", f"R$ {ICMS:.2f}"],
         ["PIS", f"R$ {PIS:.2f}"],
         ["COFINS", f"R$ {COFINS:.2f}"],
+        ["Cost Per Unit", f"R$ {cost_per_unit:.2f}"],
         ["Total Import Cost", f"R$ {total_import_cost:.2f}"]
     ]
     cost_table = Table(cost_data, colWidths=[200, 200])
