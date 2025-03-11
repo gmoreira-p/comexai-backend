@@ -3,34 +3,37 @@ from flask_cors import CORS
 import os
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
-from reportlab.lib.utils import ImageReader
 from datetime import datetime
-import requests
-
-TAX_RATES = {
-    '85171210': {'II': 0.15, 'IPI': 0.10, 'ICMS': 0.18, 'PIS': 0.0165, 'COFINS': 0.076},  # Mobile phones
-    '87032310': {'II': 0.35, 'IPI': 0.25, 'ICMS': 0.18, 'PIS': 0.0165, 'COFINS': 0.076},  # Cars
-    '62034200': {'II': 0.20, 'IPI': 0.05, 'ICMS': 0.12, 'PIS': 0.0165, 'COFINS': 0.076},  # Cotton trousers
-    '08051000': {'II': 0.10, 'IPI': 0.00, 'ICMS': 0.07, 'PIS': 0.0165, 'COFINS': 0.076},  # Oranges
-    '84713012': {'II': 0.15, 'IPI': 0.10, 'ICMS': 0.18, 'PIS': 0.0165, 'COFINS': 0.076}   # Laptops
-}
 
 app = Flask(__name__)
 CORS(app)
 
-@app.route('/')
-def home():
-    return "Welcome to ComexAI Backend!"
+TAX_RATES = {
+    '85171210': {'II': 0.15, 'IPI': 0.10, 'PIS': 0.0165, 'COFINS': 0.076},  # Mobile phones
+    '87032310': {'II': 0.35, 'IPI': 0.25, 'PIS': 0.0165, 'COFINS': 0.076},  # Cars
+    '62034200': {'II': 0.20, 'IPI': 0.05, 'PIS': 0.0165, 'COFINS': 0.076},  # Cotton trousers
+    '08051000': {'II': 0.10, 'IPI': 0.00, 'PIS': 0.0165, 'COFINS': 0.076},  # Oranges
+    '84713012': {'II': 0.15, 'IPI': 0.10, 'PIS': 0.0165, 'COFINS': 0.076}   # Laptops
+}
+
+STATE_ICMS_RATES = {
+    'São Paulo': 0.18,
+    'Rio de Janeiro': 0.20,
+    'Paraná': 0.18
+}
 
 @app.route('/calculate', methods=['POST'])
 def calculate():
     data = request.json
     ncm = data.get('ncm')
+    state = data.get('state')
     if not ncm or ncm not in TAX_RATES:
         return jsonify({"error": "Invalid or unsupported NCM code"}), 400
+    if not state or state not in STATE_ICMS_RATES:
+        return jsonify({"error": "Invalid or unsupported state"}), 400
 
     try:
         quantity = float(data.get('quantity'))
@@ -41,37 +44,43 @@ def calculate():
         return jsonify({"error": "Invalid numeric input"}), 400
 
     rates = TAX_RATES[ncm]
+    icms_rate = STATE_ICMS_RATES[state]
 
     total_product_cost = quantity * product_cost_per_unit
-    customs_value = total_product_cost + freight + insurance
-    II = customs_value * rates['II']
-    IPI = customs_value * rates['IPI']
-    PIS = customs_value * rates['PIS']
-    COFINS = customs_value * rates['COFINS']
-    ICMS = (customs_value + II + IPI + PIS + COFINS) * rates['ICMS']
-    total_import_cost = total_product_cost + freight + insurance + II + IPI + ICMS + PIS + COFINS
-    cost_per_unit = total_import_cost / quantity if quantity > 0 else 0
+    valor_aduaneiro = total_product_cost + freight + insurance
+    II = valor_aduaneiro * rates['II']
+    IPI = valor_aduaneiro * rates['IPI']
+    PIS = valor_aduaneiro * rates['PIS']
+    COFINS = valor_aduaneiro * rates['COFINS']
+    ICMS = (valor_aduaneiro + II + IPI + PIS + COFINS) * icms_rate
+    total_tributos = II + IPI + PIS + COFINS + ICMS
+    custo_liquido = valor_aduaneiro + total_tributos
+    cost_per_unit = custo_liquido / quantity if quantity > 0 else 0
 
-    response = {
+    return jsonify({
         "total_product_cost": total_product_cost,
         "freight": freight,
         "insurance": insurance,
+        "valor_aduaneiro": valor_aduaneiro,
         "II": II,
         "IPI": IPI,
-        "ICMS": ICMS,
         "PIS": PIS,
         "COFINS": COFINS,
-        "total_import_cost": total_import_cost,
+        "ICMS": ICMS,
+        "total_tributos": total_tributos,
+        "custo_liquido": custo_liquido,
         "cost_per_unit": cost_per_unit
-    }
-    return jsonify(response)
+    })
 
 @app.route('/generate_pdf', methods=['POST'])
 def generate_pdf():
     data = request.json
     ncm = data.get('ncm')
+    state = data.get('state')
     if not ncm or ncm not in TAX_RATES:
         return jsonify({"error": "Invalid or unsupported NCM code"}), 400
+    if not state or state not in STATE_ICMS_RATES:
+        return jsonify({"error": "Invalid or unsupported state"}), 400
 
     try:
         quantity = float(data.get('quantity'))
@@ -82,111 +91,78 @@ def generate_pdf():
         return jsonify({"error": "Invalid numeric input"}), 400
 
     rates = TAX_RATES[ncm]
+    icms_rate = STATE_ICMS_RATES[state]
+
     total_product_cost = quantity * product_cost_per_unit
-    customs_value = total_product_cost + freight + insurance
-    II = customs_value * rates['II']
-    IPI = customs_value * rates['IPI']
-    PIS = customs_value * rates['PIS']
-    COFINS = customs_value * rates['COFINS']
-    ICMS = (customs_value + II + IPI + PIS + COFINS) * rates['ICMS']
-    total_import_cost = total_product_cost + freight + insurance + II + IPI + ICMS + PIS + COFINS
-    cost_per_unit = total_import_cost / quantity if quantity > 0 else 0
+    valor_aduaneiro = total_product_cost + freight + insurance
+    II = valor_aduaneiro * rates['II']
+    IPI = valor_aduaneiro * rates['IPI']
+    PIS = valor_aduaneiro * rates['PIS']
+    COFINS = valor_aduaneiro * rates['COFINS']
+    ICMS = (valor_aduaneiro + II + IPI + PIS + COFINS) * icms_rate
+    total_tributos = II + IPI + PIS + COFINS + ICMS
+    custo_liquido = valor_aduaneiro + total_tributos
+    cost_per_unit = custo_liquido / quantity if quantity > 0 else 0
 
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=30, bottomMargin=20)
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
     elements = []
 
-    # Logo
-    logo_url = "https://gmoreira-p.github.io/comexai-mvp/comexai_logo.png"  # Replace with your actual URL
-    try:
-        response = requests.get(logo_url, timeout=5)
-        if response.status_code == 200:
-            img = ImageReader(BytesIO(response.content))
-            img_width, img_height = img.getSize()
-            aspect_ratio = img_width / img_height
-            target_width = 150  # Adjust this to fit your design
-            target_height = target_width / aspect_ratio
-            logo_img = Image(BytesIO(response.content), width=target_width, height=target_height)
-            # Center the logo
-            page_width = letter[0]  # 612 points for letter size
-            logo_x = (page_width - target_width) / 2
-            logo_img.drawHeight = target_height
-            logo_img.drawWidth = target_width
-            logo_img.hAlign = 'CENTER'
-            elements.append(logo_img)
-        else:
-            raise Exception("Logo fetch failed")
-    except Exception as e:
-        print(f"Error loading logo: {e}")
-        elements.append(Paragraph("ComexAI", styles['Heading1']))
-
-    # Header
-    elements.append(Spacer(1, 15))
-    header_style = styles['Normal']
-    header_style.alignment = 1  # Center align
-    elements.append(Paragraph("Import Cost Report", header_style))
+    elements.append(Paragraph("ComexAI Import Cost Report", styles['Heading1']))
     elements.append(Paragraph(f"NCM Code: {ncm}", styles['Normal']))
+    elements.append(Paragraph(f"State: {state}", styles['Normal']))
     elements.append(Paragraph(f"Date: {datetime.now().strftime('%Y-%m-%d')}", styles['Normal']))
     elements.append(Spacer(1, 20))
 
-    # Input Details
     elements.append(Paragraph("Input Details", styles['Heading3']))
     input_data = [
         ["Quantity", f"{quantity}"],
         ["Product Cost per Unit", f"R$ {product_cost_per_unit:.2f}"],
         ["Freight", f"R$ {freight:.2f}"],
-        ["Insurance", f"R$ {insurance:.2f}"]
+        ["Insurance", f"R$ {insurance:.2f}"],
+        ["State", state]
     ]
     input_table = Table(input_data, colWidths=[250, 150])
-    input_table.setStyle([
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('BACKGROUND', (0, 0), (-1, -1), colors.whitesmoke),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.darkblue),
-        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.grey),
-        ('BOX', (0, 0), (-1, -1), 1, colors.black)
-    ])
+    input_table.setStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey)])
     elements.append(input_table)
     elements.append(Spacer(1, 20))
 
-    # Cost Breakdown
     elements.append(Paragraph("Cost Breakdown", styles['Heading3']))
-    cost_data = [
-        ["Description", "Amount (BRL)"],
-        ["Total Product Cost", f"R$ {total_product_cost:.2f}"],
+    valor_aduaneiro_data = [
+        ["Product Cost", f"R$ {total_product_cost:.2f}"],
         ["Freight", f"R$ {freight:.2f}"],
         ["Insurance", f"R$ {insurance:.2f}"],
-        ["Import Tax (II)", f"R$ {II:.2f}"],
+        ["Total Valor Aduaneiro", f"R$ {valor_aduaneiro:.2f}"]
+    ]
+    valor_aduaneiro_table = Table(valor_aduaneiro_data, colWidths=[250, 150])
+    valor_aduaneiro_table.setStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey), ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')])
+    elements.append(Paragraph("Valor Aduaneiro", styles['Heading4']))
+    elements.append(valor_aduaneiro_table)
+    elements.append(Spacer(1, 12))
+
+    tributos_data = [
+        ["II", f"R$ {II:.2f}"],
         ["IPI", f"R$ {IPI:.2f}"],
-        ["ICMS", f"R$ {ICMS:.2f}"],
         ["PIS", f"R$ {PIS:.2f}"],
         ["COFINS", f"R$ {COFINS:.2f}"],
-        ["Cost Per Unit", f"R$ {cost_per_unit:.2f}"],
-        ["Total Import Cost", f"R$ {total_import_cost:.2f}"]
+        ["ICMS", f"R$ {ICMS:.2f}"],
+        ["Total de Tributos", f"R$ {total_tributos:.2f}"]
     ]
-    cost_table = Table(cost_data, colWidths=[250, 150])
-    cost_table.setStyle([
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('BACKGROUND', (0, 0), (1, 0), colors.lightblue),
-        ('BACKGROUND', (0, -1), (1, -1), colors.lightgrey),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.grey),
-        ('BOX', (0, 0), (-1, -1), 1, colors.black)
-    ])
-    elements.append(cost_table)
-    elements.append(Spacer(1, 20))
+    tributos_table = Table(tributos_data, colWidths=[250, 150])
+    tributos_table.setStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey), ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')])
+    elements.append(Paragraph("Tributos Devidos no Desembaraço", styles['Heading4']))
+    elements.append(tributos_table)
+    elements.append(Spacer(1, 12))
 
-    # Footer
-    elements.append(Paragraph("Generated by ComexAI - Your Import Cost Solution", styles['Italic']))
+    custo_liquido_data = [
+        ["Custo Líquido da Importação", f"R$ {custo_liquido:.2f}"],
+        ["Cost Per Unit", f"R$ {cost_per_unit:.2f}"]
+    ]
+    custo_liquido_table = Table(custo_liquido_data, colWidths=[250, 150])
+    custo_liquido_table.setStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey), ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold')])
+    elements.append(Paragraph("Custo Líquido da Importação", styles['Heading4']))
+    elements.append(custo_liquido_table)
 
     doc.build(elements)
     buffer.seek(0)
