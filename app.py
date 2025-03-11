@@ -100,7 +100,7 @@ def generate_pdf():
     logo_url = "https://gmoreira-p.github.io/comexai-mvp/comexai_logo.png"  # Replace with your actual GitHub Pages URL
     try:
         response = requests.get(logo_url)
-        logo_img = Image(BytesIO(response.content), width=600, height=150)
+        logo_img = Image(BytesIO(response.content), width=400, height=150)
         elements.append(logo_img)
     except Exception:
         elements.append(Paragraph("ComexAI", styles['Heading1']))  # Fallback if logo fails
