@@ -6,6 +6,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Image
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader
 from datetime import datetime
 import requests
 
@@ -92,22 +93,39 @@ def generate_pdf():
     cost_per_unit = total_import_cost / quantity if quantity > 0 else 0
 
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=20, bottomMargin=20)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=30, bottomMargin=20)
     styles = getSampleStyleSheet()
     elements = []
 
     # Logo
-    logo_url = "https://gmoreira-p.github.io/comexai-mvp/comexai_logo.png"  # Replace with your actual GitHub Pages URL
+    logo_url = "https://your-username.github.io/comexai-mvp/comexai_logo.png"  # Replace with your actual URL
     try:
-        response = requests.get(logo_url)
-        logo_img = Image(BytesIO(response.content), width=400, height=150)
-        elements.append(logo_img)
-    except Exception:
-        elements.append(Paragraph("ComexAI", styles['Heading1']))  # Fallback if logo fails
+        response = requests.get(logo_url, timeout=5)
+        if response.status_code == 200:
+            img = ImageReader(BytesIO(response.content))
+            img_width, img_height = img.getSize()
+            aspect_ratio = img_width / img_height
+            target_width = 150  # Adjust this to fit your design
+            target_height = target_width / aspect_ratio
+            logo_img = Image(BytesIO(response.content), width=target_width, height=target_height)
+            # Center the logo
+            page_width = letter[0]  # 612 points for letter size
+            logo_x = (page_width - target_width) / 2
+            logo_img.drawHeight = target_height
+            logo_img.drawWidth = target_width
+            logo_img.hAlign = 'CENTER'
+            elements.append(logo_img)
+        else:
+            raise Exception("Logo fetch failed")
+    except Exception as e:
+        print(f"Error loading logo: {e}")
+        elements.append(Paragraph("ComexAI", styles['Heading1']))
 
     # Header
-    elements.append(Spacer(1, 10))
-    elements.append(Paragraph("Import Cost Report", styles['Heading2']))
+    elements.append(Spacer(1, 15))
+    header_style = styles['Normal']
+    header_style.alignment = 1  # Center align
+    elements.append(Paragraph("Import Cost Report", header_style))
     elements.append(Paragraph(f"NCM Code: {ncm}", styles['Normal']))
     elements.append(Paragraph(f"Date: {datetime.now().strftime('%Y-%m-%d')}", styles['Normal']))
     elements.append(Spacer(1, 20))
