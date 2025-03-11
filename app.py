@@ -23,7 +23,8 @@ STATE_ICMS_RATES = {
     'São Paulo': 0.18,
     'Rio de Janeiro': 0.20,
     'Paraná': 0.18,
-    'Santa Catarina': 0.17
+    'Santa Catarina': 0.17,
+    'Espírito Santo': 0.17  # Added Espírito Santo with 17% ICMS
 }
 
 @app.route('/calculate', methods=['POST'])
@@ -33,7 +34,7 @@ def calculate():
     state = data.get('state')
     if not ncm or ncm not in TAX_RATES:
         return jsonify({"error": "Invalid or unsupported NCM code"}), 400
-    if not state or state not in STATE_ICMS_RATES:
+    if not state:
         return jsonify({"error": "Invalid or unsupported state"}), 400
 
     try:
@@ -45,7 +46,9 @@ def calculate():
         return jsonify({"error": "Invalid numeric input"}), 400
 
     rates = TAX_RATES[ncm]
-    icms_rate = STATE_ICMS_RATES[state]
+    icms_rate = data.get('icmsRate') if state == 'Custom' else STATE_ICMS_RATES.get(state)
+    if icms_rate is None:
+        return jsonify({"error": "Invalid or unsupported state"}), 400
 
     total_product_cost = quantity * product_cost_per_unit
     valor_aduaneiro = total_product_cost + freight + insurance
@@ -80,7 +83,7 @@ def generate_pdf():
     state = data.get('state')
     if not ncm or ncm not in TAX_RATES:
         return jsonify({"error": "Invalid or unsupported NCM code"}), 400
-    if not state or state not in STATE_ICMS_RATES:
+    if not state:
         return jsonify({"error": "Invalid or unsupported state"}), 400
 
     try:
@@ -92,7 +95,9 @@ def generate_pdf():
         return jsonify({"error": "Invalid numeric input"}), 400
 
     rates = TAX_RATES[ncm]
-    icms_rate = STATE_ICMS_RATES[state]
+    icms_rate = data.get('icmsRate') if state == 'Custom' else STATE_ICMS_RATES.get(state)
+    if icms_rate is None:
+        return jsonify({"error": "Invalid or unsupported state"}), 400
 
     total_product_cost = quantity * product_cost_per_unit
     valor_aduaneiro = total_product_cost + freight + insurance
@@ -122,7 +127,8 @@ def generate_pdf():
         ["Product Cost per Unit", f"R$ {product_cost_per_unit:.2f}"],
         ["Freight", f"R$ {freight:.2f}"],
         ["Insurance", f"R$ {insurance:.2f}"],
-        ["State", state]
+        ["State", state],
+        ["ICMS Rate", f"{(icms_rate * 100):.2f}%" if state == 'Custom' else f"{(icms_rate * 100):.2f}% (Predefined)"]
     ]
     input_table = Table(input_data, colWidths=[250, 150])
     input_table.setStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey)])
