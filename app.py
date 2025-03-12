@@ -24,7 +24,7 @@ STATE_ICMS_RATES = {
     'Rio de Janeiro': 0.20,
     'Paraná': 0.18,
     'Santa Catarina': 0.17,
-    'Espírito Santo': 0.17  # Added Espírito Santo with 17% ICMS
+    'Espírito Santo': 0.17
 }
 
 @app.route('/calculate', methods=['POST'])
@@ -39,7 +39,8 @@ def calculate():
 
     try:
         quantity = float(data.get('quantity'))
-        product_cost_per_unit = float(data.get('productCost'))
+        product_cost_usd = float(data.get('productCostUsd'))
+        exchange_rate = float(data.get('exchangeRate'))
         freight = float(data.get('freight', 0))
         insurance = float(data.get('insurance', 0))
     except (TypeError, ValueError):
@@ -50,21 +51,21 @@ def calculate():
     if icms_rate is None:
         return jsonify({"error": "Invalid or unsupported state"}), 400
 
-    # Calculate taxes step-by-step
-    total_product_cost = quantity * product_cost_per_unit
-    valor_aduaneiro = total_product_cost + freight + insurance  # CIF value
+    # Convert product cost from USD to BRL
+    total_product_cost_brl = quantity * product_cost_usd * exchange_rate
+    valor_aduaneiro = total_product_cost_brl + freight + insurance
     II = valor_aduaneiro * rates['II']
-    IPI = (valor_aduaneiro + II) * rates['IPI']  # Corrected: Include II in IPI base
+    IPI = (valor_aduaneiro + II) * rates['IPI']
     PIS = valor_aduaneiro * rates['PIS']
     COFINS = valor_aduaneiro * rates['COFINS']
     base_icms = valor_aduaneiro + II + IPI + PIS + COFINS
-    ICMS = (icms_rate * base_icms) / (1 - icms_rate)  # Corrected: Gross-up method
+    ICMS = (icms_rate * base_icms) / (1 - icms_rate)
     total_tributos = II + IPI + PIS + COFINS + ICMS
     custo_liquido = valor_aduaneiro + total_tributos
     cost_per_unit = custo_liquido / quantity if quantity > 0 else 0
 
     return jsonify({
-        "total_product_cost": total_product_cost,
+        "total_product_cost": total_product_cost_brl,
         "freight": freight,
         "insurance": insurance,
         "valor_aduaneiro": valor_aduaneiro,
@@ -90,7 +91,8 @@ def generate_pdf():
 
     try:
         quantity = float(data.get('quantity'))
-        product_cost_per_unit = float(data.get('productCost'))
+        product_cost_usd = float(data.get('productCostUsd'))
+        exchange_rate = float(data.get('exchangeRate'))
         freight = float(data.get('freight', 0))
         insurance = float(data.get('insurance', 0))
     except (TypeError, ValueError):
@@ -101,18 +103,18 @@ def generate_pdf():
     if icms_rate is None:
         return jsonify({"error": "Invalid or unsupported state"}), 400
 
-    total_product_cost = quantity * product_cost_per_unit
-    valor_aduaneiro = total_product_cost + freight + insurance  # CIF value
+    total_product_cost_brl = quantity * product_cost_usd * exchange_rate
+    valor_aduaneiro = total_product_cost_brl + freight + insurance
     II = valor_aduaneiro * rates['II']
-    IPI = (valor_aduaneiro + II) * rates['IPI']  # Corrected: Include II in IPI base
+    IPI = (valor_aduaneiro + II) * rates['IPI']
     PIS = valor_aduaneiro * rates['PIS']
     COFINS = valor_aduaneiro * rates['COFINS']
     base_icms = valor_aduaneiro + II + IPI + PIS + COFINS
-    ICMS = (icms_rate * base_icms) / (1 - icms_rate)  # Corrected: Gross-up method
+    ICMS = (icms_rate * base_icms) / (1 - icms_rate)
     total_tributos = II + IPI + PIS + COFINS + ICMS
     custo_liquido = valor_aduaneiro + total_tributos
     cost_per_unit = custo_liquido / quantity if quantity > 0 else 0
-    
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
@@ -127,9 +129,11 @@ def generate_pdf():
     elements.append(Paragraph("Input Details", styles['Heading3']))
     input_data = [
         ["Quantity", f"{quantity}"],
-        ["Product Cost per Unit", f"R$ {product_cost_per_unit:.2f}"],
-        ["Freight", f"R$ {freight:.2f}"],
-        ["Insurance", f"R$ {insurance:.2f}"],
+        ["Product Cost per Unit", f"${product_cost_usd:.2f} USD"],
+        ["Exchange Rate (USD to BRL)", f"{exchange_rate:.2f}"],
+        ["Total Product Cost", f"R$ {total_product_cost_brl:.2f} BRL"],
+        ["Freight", f"R$ {freight:.2f} BRL"],
+        ["Insurance", f"R$ {insurance:.2f} BRL"],
         ["State", state],
         ["ICMS Rate", f"{(icms_rate * 100):.2f}%" if state == 'Custom' else f"{(icms_rate * 100):.2f}% (Predefined)"]
     ]
@@ -138,9 +142,9 @@ def generate_pdf():
     elements.append(input_table)
     elements.append(Spacer(1, 20))
 
-    elements.append(Paragraph("Cost Breakdown", styles['Heading3']))
+    elements.append(Paragraph("Cost Breakdown (BRL)", styles['Heading3']))
     valor_aduaneiro_data = [
-        ["Product Cost", f"R$ {total_product_cost:.2f}"],
+        ["Total Product Cost", f"R$ {total_product_cost_brl:.2f}"],
         ["Freight", f"R$ {freight:.2f}"],
         ["Insurance", f"R$ {insurance:.2f}"],
         ["Total Valor Aduaneiro", f"R$ {valor_aduaneiro:.2f}"]
