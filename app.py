@@ -7,10 +7,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 from datetime import datetime
-# CHANGE START: Import locale module for number formatting
-import locale
-locale.setlocale(locale.LC_ALL, 'pt_BR.UTF-8')  # Set locale to Brazilian Portuguese
-# CHANGE END
 
 app = Flask(__name__)
 CORS(app)
@@ -30,6 +26,23 @@ STATE_ICMS_RATES = {
     'Santa Catarina': 0.17,
     'Espírito Santo': 0.17
 }
+
+# CHANGE START: Add custom number formatting function
+def format_br_number(value):
+    """Format a number to Brazilian style (e.g., 100000.00 -> 100.000,00)."""
+    # Convert to string with 2 decimal places
+    value_str = f"{value:.2f}"
+    # Split into integer and decimal parts
+    integer_part, decimal_part = value_str.split('.')
+    # Add dots as thousands separators
+    integer_with_dots = ''
+    for i, digit in enumerate(integer_part[::-1]):  # Reverse to process from right
+        if i > 0 and i % 3 == 0:
+            integer_with_dots = '.' + integer_with_dots
+        integer_with_dots = digit + integer_with_dots
+    # Combine with comma for decimal
+    return f"{integer_with_dots},{decimal_part}"
+# CHANGE END
 
 @app.route('/calculate', methods=['POST'])
 def calculate():
@@ -143,17 +156,17 @@ def generate_pdf():
     elements.append(Spacer(1, 20))
 
     elements.append(Paragraph("Input Details", styles['Heading3']))
-    # CHANGE START: Format numbers with Brazilian locale (100.000,00)
+    # CHANGE START: Use custom formatting function instead of locale
     input_data = [
         ["Quantity", f"{quantity}"],
-        ["Product Cost per Unit", f"${locale.format_string('%.2f', product_cost_usd, grouping=True)} USD"],
-        ["Exchange Rate (USD to BRL)", f"{locale.format_string('%.2f', exchange_rate, grouping=True)}"],
-        ["Total Product Cost", f"R$ {locale.format_string('%.2f', total_product_cost, grouping=True)} BRL"],
-        ["Freight", f"${locale.format_string('%.2f', freight_usd, grouping=True)} USD (R$ {locale.format_string('%.2f', freight_brl, grouping=True)} BRL)"],
-        ["Insurance Rate", f"{locale.format_string('%.2f', insurance_rate * 100, grouping=True)}%"],
-        ["Insurance", f"R$ {locale.format_string('%.2f', insurance_brl, grouping=True)} BRL"],
+        ["Product Cost per Unit", f"${format_br_number(product_cost_usd)} USD"],
+        ["Exchange Rate (USD to BRL)", f"{format_br_number(exchange_rate)}"],
+        ["Total Product Cost", f"R$ {format_br_number(total_product_cost)} BRL"],
+        ["Freight", f"${format_br_number(freight_usd)} USD (R$ {format_br_number(freight_brl)} BRL)"],
+        ["Insurance Rate", f"{format_br_number(insurance_rate * 100)}%"],
+        ["Insurance", f"R$ {format_br_number(insurance_brl)} BRL"],
         ["State", state],
-        ["ICMS Rate", f"{locale.format_string('%.2f', icms_rate * 100, grouping=True)}%" if state == 'Custom' else f"{locale.format_string('%.2f', icms_rate * 100, grouping=True)}% (Predefined)"]
+        ["ICMS Rate", f"{format_br_number(icms_rate * 100)}%" if state == 'Custom' else f"{format_br_number(icms_rate * 100)}% (Predefined)"]
     ]
     # CHANGE END
     input_table = Table(input_data, colWidths=[250, 150])
@@ -162,12 +175,12 @@ def generate_pdf():
     elements.append(Spacer(1, 20))
 
     elements.append(Paragraph("Cost Breakdown (BRL)", styles['Heading3']))
-    # CHANGE START: Format numbers with Brazilian locale
+    # CHANGE START: Use custom formatting function
     valor_aduaneiro_data = [
-        ["Total Product Cost", f"R$ {locale.format_string('%.2f', total_product_cost, grouping=True)}"],
-        ["Freight", f"R$ {locale.format_string('%.2f', freight_brl, grouping=True)}"],
-        ["Insurance", f"R$ {locale.format_string('%.2f', insurance_brl, grouping=True)}"],
-        ["Total Valor Aduaneiro", f"R$ {locale.format_string('%.2f', valor_aduaneiro, grouping=True)}"]
+        ["Total Product Cost", f"R$ {format_br_number(total_product_cost)}"],
+        ["Freight", f"R$ {format_br_number(freight_brl)}"],
+        ["Insurance", f"R$ {format_br_number(insurance_brl)}"],
+        ["Total Valor Aduaneiro", f"R$ {format_br_number(valor_aduaneiro)}"]
     ]
     # CHANGE END
     valor_aduaneiro_table = Table(valor_aduaneiro_data, colWidths=[250, 150])
@@ -176,14 +189,14 @@ def generate_pdf():
     elements.append(valor_aduaneiro_table)
     elements.append(Spacer(1, 12))
 
-    # CHANGE START: Format numbers with Brazilian locale
+    # CHANGE START: Use custom formatting function
     tributos_data = [
-        ["II", f"R$ {locale.format_string('%.2f', II, grouping=True)}"],
-        ["IPI", f"R$ {locale.format_string('%.2f', IPI, grouping=True)}"],
-        ["PIS", f"R$ {locale.format_string('%.2f', PIS, grouping=True)}"],
-        ["COFINS", f"R$ {locale.format_string('%.2f', COFINS, grouping=True)}"],
-        ["ICMS", f"R$ {locale.format_string('%.2f', ICMS, grouping=True)}"],
-        ["Total de Tributos", f"R$ {locale.format_string('%.2f', total_tributos, grouping=True)}"]
+        ["II", f"R$ {format_br_number(II)}"],
+        ["IPI", f"R$ {format_br_number(IPI)}"],
+        ["PIS", f"R$ {format_br_number(PIS)}"],
+        ["COFINS", f"R$ {format_br_number(COFINS)}"],
+        ["ICMS", f"R$ {format_br_number(ICMS)}"],
+        ["Total de Tributos", f"R$ {format_br_number(total_tributos)}"]
     ]
     # CHANGE END
     tributos_table = Table(tributos_data, colWidths=[250, 150])
@@ -192,11 +205,11 @@ def generate_pdf():
     elements.append(tributos_table)
     elements.append(Spacer(1, 12))
 
-    # CHANGE START: Format numbers with Brazilian locale
+    # CHANGE START: Use custom formatting function
     despesa_nacionalizacao_data = [
-        ["AFRMM (25% of Freight)", f"R$ {locale.format_string('%.2f', afrmm, grouping=True)}"],
-        ["Other Nationalization Costs (10% of FOB)", f"R$ {locale.format_string('%.2f', other_nat_costs, grouping=True)}"],
-        ["Total Despesa de Nacionalização", f"R$ {locale.format_string('%.2f', total_despesa_nacionalizacao, grouping=True)}"]
+        ["AFRMM (25% of Freight)", f"R$ {format_br_number(afrmm)}"],
+        ["Other Nationalization Costs (10% of FOB)", f"R$ {format_br_number(other_nat_costs)}"],
+        ["Total Despesa de Nacionalização", f"R$ {format_br_number(total_despesa_nacionalizacao)}"]
     ]
     # CHANGE END
     despesa_nacionalizacao_table = Table(despesa_nacionalizacao_data, colWidths=[250, 150])
@@ -205,10 +218,10 @@ def generate_pdf():
     elements.append(despesa_nacionalizacao_table)
     elements.append(Spacer(1, 12))
 
-    # CHANGE START: Format numbers with Brazilian locale
+    # CHANGE START: Use custom formatting function
     custo_liquido_data = [
-        ["Custo Líquido da Importação", f"R$ {locale.format_string('%.2f', custo_liquido, grouping=True)}"],
-        ["Cost Per Unit", f"R$ {locale.format_string('%.2f', cost_per_unit, grouping=True)}"]
+        ["Custo Líquido da Importação", f"R$ {format_br_number(custo_liquido)}"],
+        ["Cost Per Unit", f"R$ {format_br_number(cost_per_unit)}"]
     ]
     # CHANGE END
     custo_liquido_table = Table(custo_liquido_data, colWidths=[250, 150])
