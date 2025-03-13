@@ -41,8 +41,10 @@ def calculate():
         quantity = float(data.get('quantity'))
         product_cost_usd = float(data.get('productCostUsd'))
         exchange_rate = float(data.get('exchangeRate'))
-        freight = float(data.get('freight', 0))
-        insurance = float(data.get('insurance', 0))
+        # CHANGE START: Freight now in USD, Insurance now a percentage
+        freight_usd = float(data.get('freightUsd', 0))
+        insurance_rate = float(data.get('insuranceRate', 0))
+        # CHANGE END
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid numeric input"}), 400
 
@@ -51,9 +53,11 @@ def calculate():
     if icms_rate is None:
         return jsonify({"error": "Invalid or unsupported state"}), 400
 
-    # Convert product cost from USD to BRL
-    total_product_cost_brl = quantity * product_cost_usd * exchange_rate
-    valor_aduaneiro = total_product_cost_brl + freight + insurance
+    # CHANGE START: Updated calculations for freight, insurance, and nationalization costs
+    total_product_cost = quantity * product_cost_usd * exchange_rate  # FOB in BRL
+    freight_brl = freight_usd * exchange_rate
+    insurance_brl = (quantity * product_cost_usd) * insurance_rate * exchange_rate  # Insurance as % of FOB in BRL
+    valor_aduaneiro = total_product_cost + freight_brl + insurance_brl  # CIF value
     II = valor_aduaneiro * rates['II']
     IPI = (valor_aduaneiro + II) * rates['IPI']
     PIS = valor_aduaneiro * rates['PIS']
@@ -61,13 +65,20 @@ def calculate():
     base_icms = valor_aduaneiro + II + IPI + PIS + COFINS
     ICMS = (icms_rate * base_icms) / (1 - icms_rate)
     total_tributos = II + IPI + PIS + COFINS + ICMS
-    custo_liquido = valor_aduaneiro + total_tributos
+    # Despesa de Nacionalização
+    afrmm = 0.25 * freight_brl  # 25% of freight in BRL
+    other_nat_costs = 0.10 * total_product_cost  # 10% of FOB in BRL
+    total_despesa_nacionalizacao = afrmm + other_nat_costs
+    custo_liquido = valor_aduaneiro + total_tributos + total_despesa_nacionalizacao
     cost_per_unit = custo_liquido / quantity if quantity > 0 else 0
+    # CHANGE END
 
     return jsonify({
-        "total_product_cost": total_product_cost_brl,
-        "freight": freight,
-        "insurance": insurance,
+        "total_product_cost": total_product_cost,
+        # CHANGE START: Added freightBr and insuranceBr for clarity
+        "freightBr": freight_brl,
+        "insuranceBr": insurance_brl,
+        # CHANGE END
         "valor_aduaneiro": valor_aduaneiro,
         "II": II,
         "IPI": IPI,
@@ -75,6 +86,11 @@ def calculate():
         "COFINS": COFINS,
         "ICMS": ICMS,
         "total_tributos": total_tributos,
+        # CHANGE START: Added Despesa de Nacionalização fields
+        "afrmm": afrmm,
+        "otherNatCosts": other_nat_costs,
+        "total_despesa_nacionalizacao": total_despesa_nacionalizacao,
+        # CHANGE END
         "custo_liquido": custo_liquido,
         "cost_per_unit": cost_per_unit
     })
@@ -93,8 +109,10 @@ def generate_pdf():
         quantity = float(data.get('quantity'))
         product_cost_usd = float(data.get('productCostUsd'))
         exchange_rate = float(data.get('exchangeRate'))
-        freight = float(data.get('freight', 0))
-        insurance = float(data.get('insurance', 0))
+        # CHANGE START: Freight now in USD, Insurance now a percentage
+        freight_usd = float(data.get('freightUsd', 0))
+        insurance_rate = float(data.get('insuranceRate', 0))
+        # CHANGE END
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid numeric input"}), 400
 
@@ -103,8 +121,11 @@ def generate_pdf():
     if icms_rate is None:
         return jsonify({"error": "Invalid or unsupported state"}), 400
 
-    total_product_cost_brl = quantity * product_cost_usd * exchange_rate
-    valor_aduaneiro = total_product_cost_brl + freight + insurance
+    # CHANGE START: Updated calculations for freight, insurance, and nationalization costs
+    total_product_cost = quantity * product_cost_usd * exchange_rate
+    freight_brl = freight_usd * exchange_rate
+    insurance_brl = (quantity * product_cost_usd) * insurance_rate * exchange_rate  # Insurance as % of FOB
+    valor_aduaneiro = total_product_cost + freight_brl + insurance_brl
     II = valor_aduaneiro * rates['II']
     IPI = (valor_aduaneiro + II) * rates['IPI']
     PIS = valor_aduaneiro * rates['PIS']
@@ -112,8 +133,12 @@ def generate_pdf():
     base_icms = valor_aduaneiro + II + IPI + PIS + COFINS
     ICMS = (icms_rate * base_icms) / (1 - icms_rate)
     total_tributos = II + IPI + PIS + COFINS + ICMS
-    custo_liquido = valor_aduaneiro + total_tributos
+    afrmm = 0.25 * freight_brl
+    other_nat_costs = 0.10 * total_product_cost
+    total_despesa_nacionalizacao = afrmm + other_nat_costs
+    custo_liquido = valor_aduaneiro + total_tributos + total_despesa_nacionalizacao
     cost_per_unit = custo_liquido / quantity if quantity > 0 else 0
+    # CHANGE END
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
@@ -127,28 +152,33 @@ def generate_pdf():
     elements.append(Spacer(1, 20))
 
     elements.append(Paragraph("Input Details", styles['Heading3']))
+    # CHANGE START: Updated input details to reflect new fields
     input_data = [
         ["Quantity", f"{quantity}"],
         ["Product Cost per Unit", f"${product_cost_usd:.2f} USD"],
         ["Exchange Rate (USD to BRL)", f"{exchange_rate:.2f}"],
-        ["Total Product Cost", f"R$ {total_product_cost_brl:.2f} BRL"],
-        ["Freight", f"R$ {freight:.2f} BRL"],
-        ["Insurance", f"R$ {insurance:.2f} BRL"],
+        ["Total Product Cost", f"R$ {total_product_cost:.2f} BRL"],
+        ["Freight", f"${freight_usd:.2f} USD (R$ {freight_brl:.2f} BRL)"],
+        ["Insurance Rate", f"{(insurance_rate * 100):.2f}%"],
+        ["Insurance", f"R$ {insurance_brl:.2f} BRL"],
         ["State", state],
         ["ICMS Rate", f"{(icms_rate * 100):.2f}%" if state == 'Custom' else f"{(icms_rate * 100):.2f}% (Predefined)"]
     ]
+    # CHANGE END
     input_table = Table(input_data, colWidths=[250, 150])
     input_table.setStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey)])
     elements.append(input_table)
     elements.append(Spacer(1, 20))
 
     elements.append(Paragraph("Cost Breakdown (BRL)", styles['Heading3']))
+    # CHANGE START: Updated Valor Aduaneiro section
     valor_aduaneiro_data = [
-        ["Total Product Cost", f"R$ {total_product_cost_brl:.2f}"],
-        ["Freight", f"R$ {freight:.2f}"],
-        ["Insurance", f"R$ {insurance:.2f}"],
+        ["Total Product Cost", f"R$ {total_product_cost:.2f}"],
+        ["Freight", f"R$ {freight_brl:.2f}"],
+        ["Insurance", f"R$ {insurance_brl:.2f}"],
         ["Total Valor Aduaneiro", f"R$ {valor_aduaneiro:.2f}"]
     ]
+    # CHANGE END
     valor_aduaneiro_table = Table(valor_aduaneiro_data, colWidths=[250, 150])
     valor_aduaneiro_table.setStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey), ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')])
     elements.append(Paragraph("Valor Aduaneiro", styles['Heading4']))
@@ -168,6 +198,19 @@ def generate_pdf():
     elements.append(Paragraph("Tributos Devidos no Desembaraço", styles['Heading4']))
     elements.append(tributos_table)
     elements.append(Spacer(1, 12))
+
+    # CHANGE START: Added Despesa de Nacionalização section
+    despesa_nacionalizacao_data = [
+        ["AFRMM (25% of Freight)", f"R$ {afrmm:.2f}"],
+        ["Other Nationalization Costs (10% of FOB)", f"R$ {other_nat_costs:.2f}"],
+        ["Total Despesa de Nacionalização", f"R$ {total_despesa_nacionalizacao:.2f}"]
+    ]
+    despesa_nacionalizacao_table = Table(despesa_nacionalizacao_data, colWidths=[250, 150])
+    despesa_nacionalizacao_table.setStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey), ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold')])
+    elements.append(Paragraph("Despesa de Nacionalização", styles['Heading4']))
+    elements.append(despesa_nacionalizacao_table)
+    elements.append(Spacer(1, 12))
+    # CHANGE END
 
     custo_liquido_data = [
         ["Custo Líquido da Importação", f"R$ {custo_liquido:.2f}"],
